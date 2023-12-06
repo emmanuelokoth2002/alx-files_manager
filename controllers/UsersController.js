@@ -1,44 +1,41 @@
 // controllers/UsersController.js
 import { Response, Request } from 'express';
+import redisClient from '../utils/redis';
 import dbClient from '../utils/db';
-import sha1 from 'sha1';
 
 class UsersController {
   static async postNew(req: Request, res: Response) {
-    const { email, password } = req.body;
+    // ... (existing code)
 
-    if (!email) {
-      return res.status(400).json({ error: 'Missing email' });
+    // Update to handle X-Token in headers
+    const { 'x-token': xToken } = req.headers;
+
+    if (!xToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (!password) {
-      return res.status(400).json({ error: 'Missing password' });
+    // Retrieve the user based on the token
+    const key = `auth_${xToken}`;
+    const userId = await redisClient.get(key);
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Check if email already exists
-    const existingUser = await dbClient
+    const user = await dbClient
       .client
       .db(dbClient.database)
       .collection('users')
-      .findOne({ email });
+      .findOne({ _id: userId });
 
-    if (existingUser) {
-      return res.status(400).json({ error: 'Already exist' });
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Hash the password
-    const hashedPassword = sha1(password);
-
-    // Create a new user
-    const newUser = await dbClient
-      .client
-      .db(dbClient.database)
-      .collection('users')
-      .insertOne({ email, password: hashedPassword });
-
-    // Return the new user with only email and id
-    const { _id, email: userEmail } = newUser.ops[0];
-    return res.status(201).json({ id: _id, email: userEmail });
+    return res.status(200).json({
+      id: user._id.toString(),
+      email: user.email,
+    });
   }
 }
 
