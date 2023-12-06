@@ -1,42 +1,35 @@
 // controllers/UsersController.js
-import { Response, Request } from 'express';
-import redisClient from '../utils/redis';
-import dbClient from '../utils/db';
+const { dbClient } = require('../utils/db');
+const bcrypt = require('bcrypt');
 
 class UsersController {
-  static async postNew(req: Request, res: Response) {
-    // ... (existing code)
+    static async postNew(req, res) {
+        const { email, password } = req.body;
 
-    // Update to handle X-Token in headers
-    const { 'x-token': xToken } = req.headers;
+        if (!email) {
+            return res.status(400).json({ error: 'Missing email' });
+        }
 
-    if (!xToken) {
-      return res.status(401).json({ error: 'Unauthorized' });
+        if (!password) {
+            return res.status(400).json({ error: 'Missing password' });
+        }
+
+        const existingUser = await dbClient.db().collection('users').findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ error: 'Already exists' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const newUser = { email, password: hashedPassword };
+        const result = await dbClient.db().collection('users').insertOne(newUser);
+
+        const user = {
+            id: result.insertedId,
+            email,
+        };
+        res.status(201).json(user);
     }
-
-    // Retrieve the user based on the token
-    const key = `auth_${xToken}`;
-    const userId = await redisClient.get(key);
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const user = await dbClient
-      .client
-      .db(dbClient.database)
-      .collection('users')
-      .findOne({ _id: userId });
-
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    return res.status(200).json({
-      id: user._id.toString(),
-      email: user.email,
-    });
-  }
 }
 
-export default UsersController;
+module.exports = UsersController;
